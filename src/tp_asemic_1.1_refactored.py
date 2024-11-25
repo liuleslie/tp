@@ -24,7 +24,7 @@ class Structure:
         self.cx = app.width/2   # should be drawn centered on canvas
         self.cy = app.height/2
         self.strokes=[]
-        self.ix=[]
+        # self.ix=[]
     
     def __repr__(self):
         return (f'len of strokes {len(self.strokes)}, self.strokes: {self.strokes}')
@@ -33,6 +33,7 @@ class Structure:
         if len(self.strokes) == 0: # first stroke
             sCat = 'HORI' if random.random() < 0.5 else 'VERT'
             self.strokes.append(Stroke(app,app.width/2,app.height/2,sCat,CANON[sCat][0]))
+# NEED TO TAKE CARE OF POSITIONNING ON CANVAS.
         # elif len(self.strokes) == 1:
         #     currPath = self.strokes[0].path
         #     randX = random.randint(currPath[0][0],currPath[1][0]) # get random intersection coords on curr stroke
@@ -44,34 +45,60 @@ class Structure:
         #     self.ix.append((randX,randY))
         #     self.strokes.append(Stroke(app,randOX,randOY,randCat,randPath,randOCoordsSegInd))
 # DELETING THIS CHUNK...
+
         else: 
+            # randomly choose a previous stroke to intersect with
             prevStroke = self.strokes[-1] if len(self.strokes) <= 2 else random.choice(self.strokes[:-1])
-            print(prevStroke)
-
-            # choose a segment
-            # random x, y intersection
-
-            prevStrokeIxSeg = random.randrange(0,len(prevStroke.path)-1) # very crude for now
-            # FIX 56
-            ixPrevX, ixPrevY = random.randint(newPath[newStrokeIxSeg][0],newPath[newStrokeIxSeg+1][0]),random.randint(newPath[newStrokeIxSeg][1],newPath[newStrokeIxSeg+1][1])
+            # get random intersection coordinates and index for both drawn (previous) and to-be drawn (future) strokes
+            prevStrokeIxSegStartInd, prevStrokeIxRandX, prevStrokeIxRandY = self.getRandomIxInfo(prevStroke.path)
             newCat, newPath = self.getNewStroke(prevStroke.cat) 
-            newStrokeIxSeg = random.randrange(0,len(newPath)-1)
-            ixNewX, ixNewY = random.randint(newPath[newStrokeIxSeg][0],newPath[newStrokeIxSeg+1][0]),random.randint(newPath[newStrokeIxSeg][1],newPath[newStrokeIxSeg+1][1])
+            newStrokeIxSegStartInd, newStrokeIxRandX, newStrokeIxRandY = self.getRandomIxInfo(newPath)
+            # instantiate new stroke
+            self.strokes.append(Stroke(app,newStrokeIxRandX,newStrokeIxRandY,newCat,newPath))
+            newStroke = self.strokes[-1]
+            # update intersection info for both previous and new strokes
+            prevStroke.updateIx(newStroke, prevStrokeIxSegStartInd, prevStrokeIxRandX, prevStrokeIxRandY)
+            newStroke.updateIx(prevStroke, newStrokeIxSegStartInd, newStrokeIxRandX, newStrokeIxRandY)
 
-            # ixNewSegment = random.randint(0,len(newPath)-2)
-            # ixNewX, ixNewY =  random.choice(newPath)
-            ixSegment = random.choice(newPath[:-1])
+            
+            # get new originating intersecting points; do translation
 
-            print(f'ixPrevX,Y: {ixPrevX},{ixPrevY}; ixNewX,Y: {ixNewX},{ixNewY}')
-            self.ix.append((ixPrevX,ixPrevY))
-            self.strokes.append(Stroke(app,ixNewX,ixNewY,newCat,newPath))
+            
+
+            # newStrokeIxSeg = random.randrange(0,len(newPath)-1)
+            # print(f'newCat {newCat} newPath {newPath} newStrokeIxSeg {newStrokeIxSeg}')
+            # ixPrevX, ixPrevY = random.randint(newPath[newStrokeIxSeg][0],newPath[newStrokeIxSeg+1][0]),random.randint(newPath[newStrokeIxSeg][1],newPath[newStrokeIxSeg+1][1])
+            # ixNewX, ixNewY = random.randint(newPath[newStrokeIxSeg][0],newPath[newStrokeIxSeg+1][0]),random.randint(newPath[newStrokeIxSeg][1],newPath[newStrokeIxSeg+1][1])
+
+            # # ixNewSegment = random.randint(0,len(newPath)-2)
+            # # ixNewX, ixNewY =  random.choice(newPath)
+            # ixSegment = random.choice(newPath[:-1])
+
+            # print(f'ixPrevX,Y: {ixPrevX},{ixPrevY}; ixNewX,Y: {ixNewX},{ixNewY}')
+            # self.ix.append((ixPrevX,ixPrevY))
+            # self.strokes.append(Stroke(app,ixNewX,ixNewY,newCat,newPath))
             # ^ not including newOCoordsSegInd
             # self.strokes.append(Stroke(app,newOX,newOY,randCat,randPath,newOCoordsSegInd))
-            
+
+    def getRandomIxInfo(self,path):
+        strokeIxSegIndStart = random.randrange(0,len(path)-1) if len(path) > 2 else 0 # chose a random index of a segment in the path
+        print(f'segment starting index: {strokeIxSegIndStart}')
+        # get random x, y of previous stroke; choose a random int in the range between x and y
+        strokeSegStart = path[strokeIxSegIndStart] # tuple representing abstract coords
+        strokeSegEnd = path[strokeIxSegIndStart+1] # ^
+        dx = strokeSegEnd[0] - strokeSegStart[0]
+        dy = strokeSegEnd[1] - strokeSegStart[1]
+        if dx > 0: # check for valid slope
+            strokeSegRandX = random.randint(strokeSegStart[0],strokeSegEnd[0])
+            strokeSegSlope = dy / dx
+            strokeSegRandY = int(strokeSegSlope * strokeSegRandX)
+        else: # infinite dy; vertical line
+            strokeSegRandX = strokeSegStart[0] # need to figure out if this is reasonable
+            strokeSegRandY = random.randint(strokeSegStart[1],strokeSegEnd[1])
+        return strokeIxSegIndStart,strokeSegRandX,strokeSegRandY
 
 # !: ox and oy of each new stroke that's added is not intersecting with the previous stroke — 
 #    they all default to (0,0) i think
-
 
     def getNewStroke(self,excludingCat):
         usable = dict()
@@ -100,26 +127,35 @@ class Structure:
     def draw(self,app):
         for i in range(len(self.strokes)):
             currStroke = self.strokes[i]
-            if len(self.ix) > 0:
-                currStroke.draw(app,self.ix[i-1]) # take intersections into account
-            else: currStroke.draw(app)
+            currStroke.draw(app)
+            # if len(self.ix) > 0:
+            #     currStroke.draw(app,self.ix[i-1]) # take intersections into account
+            # else: currStroke.draw(app)
 
 # individual marks that make up Structure
 class Stroke:  
     w = 20 # lineWidth for stroke
 
-    # def __init__(self,app,ox,oy,cat,path,ix=[],oInd=None):
     def __init__(self,app,ox,oy,cat,path):
         self.ox = ox # originating x and y; ox, oy intersects with Structure class ix list
         self.oy = oy
         self.cat = cat
         self.path = path
-        # self.oInd = oInd # which line segment the intersection is on
+        self.ix = [] 
         self.scalar = int(app.gridStep) # scalar to scale up to fit grid
-        self.intersections = [] 
 
     def __repr__(self):
         return f'cat {self.cat}\tpath: {self.path}\n'
+    
+    def updateIx(self,other,ixSegStartInd,ixX,ixY):
+        if isinstance(other,Stroke):
+            newIx = dict()
+            newIx['ixWith'] = other
+            newIx['ixSelfSegStartInd'] = ixSegStartInd
+            newIx['ixSelfX'] = ixX
+            newIx['ixSelfY'] = ixY
+            # go ahead and add
+            self.ix.append(newIx)
     
     def draw(self,app,ixWithPrev=None):
         # iterate over dx,dy in path, starting at relative origin
@@ -132,7 +168,7 @@ class Stroke:
         gridOffset = app.width/3
         
         for i in range(0,len(self.path)-1): # go through 0 to second to last segment
-            currPtX, currPtY = self.path[i]
+            currPtX, currPtY = self.path[i] 
             currPtX, currPtY = startingX + currPtX, startingY + currPtY
             nextPtX, nextPtY = self.path[i+1]
             # if ox oy is in this range, translate it somehow
@@ -140,6 +176,8 @@ class Stroke:
             col = 'black'
             drawLine(currPtX+gridOffset,currPtY+gridOffset,nextPtX+gridOffset,nextPtY+gridOffset,lineWidth=2,fill='black') 
             startingX, startingY = nextPtX + dx, nextPtY + dy
+        
+        print(f'\nstroke ix: {self.ix}')
 
 
 
