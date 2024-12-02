@@ -10,9 +10,13 @@ FPS = 24 # frames (steps per second)
 GOAL:           working app:
                     --> sliding down slopes
                     --> check if boxed in: win/loss condition
+                    --> when falling down, if falling too fast, misses horizontal platforms
 
-GOOD TO HAVE:   friction
+GOOD TO HAVE:   better jumps — jump height and vert velocity
+                friction; damping; see Tyroller
                 player doublejump bug
+
+                smoother ux: Jonas Tyroller, https://www.youtube.com/watch?v=vFsJIrm2btU 
                 /
 '''
 
@@ -102,7 +106,6 @@ class Structure:
         self.translated = translated
     
     def checkReadyStrokes(self,app):
-        print(self.strokes)
         for currStroke in self.strokes[1:]:
             if (app.counter - currStroke.initTime) >= app.strokeReadyThreshold:
                 currStroke.isReady = True
@@ -198,7 +201,6 @@ class Player:
         self.jumpHeight = self.size * 2
     
     def draw(self):
-        # print(f'xdir {self.xDirection} ydir {self.yDirection} isjumping {self.isJumping}')
         drawRect(self.cx-self.size/2,self.cy-self.size/2,self.size,self.size,fill=self.col)
 
     def update(self,app):
@@ -215,6 +217,11 @@ class Player:
         if self.size < self.cx < app.width-self.size:
             self.cx += self.xDirection * self.speed * app.dt
 
+        '''
+        thank you 2DENGINE https://2dengine.com/doc/platformers.html#Jumping
+        and baraltech for their jumping demo https://www.youtube.com/watch?v=ST-Qq3WBZBE.
+        the first as general reference, the second for static jump heights calculations.
+        '''
         if self.isJumping:
             self.cy -= self.jumpHeight
             self.isJumping = False
@@ -226,6 +233,8 @@ class Player:
                 self.isFalling = False
                 self.yDirection = 0
                 self.cy = app.height-self.size/2
+                app.gameOver = True
+                app.landscapes.append(app.S) # add current Structure to album
 
         if self.isFalling: self.cy += self.yDirection
 
@@ -244,14 +253,14 @@ class Player:
                     (abs(pRight-(x1-app.strucStrokeWidth/2)) <= moe and self.xDirection == 1)) and 
                     (y1 <= pTop <= pBottom <= y2)):
                     self.xDirection = 0
-                    print('should not be able to move left/right; since against wall')
             
             if dir == 'HORI': # y axis: horizontal platforms
-                # if (abs(pBottom-(y1-app.strucStrokeWidth/2)) <= moe and self.yDirection == -1) or (abs(pBottom-(y1-app.strucStrokeWidth/2)) <= moe and self.yDirection == 1):
-                if (abs(pBottom-y1) <= moe) and (x1 <= pLeft <= x2): # on top of stroke and within stroke length
+                # more margin of error to allow for better landing
+                if ((abs(pBottom-y1) <= moe * 5) and 
+                    (x1 < pRight and pLeft < x2)):
+                    self.isFalling = False # on ground
                     self.yDirection = 0
                     self.cy = y2-(app.strucStrokeWidth/2)-(self.size/2) # snap to platform/stroke top 
-                    self.isFalling = False # on ground
                 else:
                     self.isFalling = True
 
@@ -267,7 +276,7 @@ def getSlopes(app,dir):
         slopes[slopeCat].append((x1,y1,x2,y2))
     return slopes[dir]
 
-def getVicinity(app):   
+'''def getVicinity(app):   
     vicinity = []
     pLeft = app.P.cx - app.P.size/2
     pRight = pLeft + app.P.size
@@ -281,17 +290,17 @@ def getVicinity(app):
         if ((x1 in rangeX) or (x2 in rangeX)) and ((y1 in rangeY) or (y2 in rangeY)):
             vicinity.append((x1,y1,x2,y2))
     return vicinity
-
+'''
 
 #################################################
 #              GAME SETUP / CONTROLS
 #################################################
 def onAppStart(app):
+    app.numGames = 0
+    app.landscapes = [] # list of Structure objects from past games
     reset(app)
 
 def reset(app):
-    print('\n')
-
     # canvas defaults
     app.width = 600
     app.height = 600
@@ -300,10 +309,11 @@ def reset(app):
     app.dt = 0.01
 
     # app controls
-    app.paused = False
+    app.paused = True if app.numGames == 0 else False
     app.stepsPerSecond = FPS
     app.counter = 0
     app.strokeReadyThreshold = FPS * 2 # stroke ready after this many seconds
+    app.showWelcome = True if app.numGames == 0 else False
     app.gameOver = False    # if game over, init
     
     # initialize land, add founding stroke
@@ -312,62 +322,117 @@ def reset(app):
     app.S.strokes[0].isReady = True
     app.strucStrokeWidth = 3
 
-    # initializer player
+    # initialize player
     app.P = Player(app.width/2,50)
 
+    #diagnostics / testing
+    app.drawGrid = False
+'''
     # collision checks
-    app.relevantSegments = []
+    app.relevantSegments = []'''
 
 def onKeyPress(app,key):
     # game controls
-    if key == 'space': app.paused = not app.paused
-    elif key == 'r': reset(app)
-    
-    # player movement
-    if key == 'up': # and not app.P.isFalling: 
-        app.P.isJumping = True
-        print(f'pressed up and can jump, player coords {app.P.cx},{app.P.cy}')
-    if key == 'left': app.P.xDirection = -1
-    if key == 'right': app.P.xDirection = 1
+    if key == 'space': 
+        app.paused = not app.paused
+        app.showWelcome = False
+    if key == 'r': 
+        app.numGames += 1
+        reset(app)
+    if key == 'q':
+        app.numGames = 0
+        reset(app)
+    if key == 'g': app.drawGrid = not app.drawGrid
+        
+    if not app.gameOver:
+        # player movement
+        if key == 'up': app.P.isJumping = True
+        if key == 'left': app.P.xDirection = -1
+        if key == 'right': app.P.xDirection = 1
 
 def onKeyRelease(app,key):
-    # player movement
-    # if key == 'up': app.P.isJumping = False # app.P.isFalling = True
-    if key == 'left': app.P.xDirection = 0
-    if key == 'right': app.P.xDirection = 0
-    
-
-#################################################
-#                    DRAWING                  
-#################################################
+    if not app.gameOver:
+        # player movement
+        if key in ['left','right']: app.P.xDirection = 0
 
 def onStep(app):
     if not app.paused:
-        takeStep(app)
-        if app.counter % (FPS * 3) == 0: # automatic stroke addition every however many seconds
-            app.S.addStroke(app)
-        # app.S.checkReadyStrokes(app)
-        app.P.update(app) 
+        if not app.gameOver:
+            takeStep(app)
+            if app.counter % (FPS * 3) == 0: # automatic stroke addition every however many seconds
+                app.S.addStroke(app)
+            # app.S.checkReadyStrokes(app)
+            app.P.update(app) 
+            checkGameOver(app)
 
 def takeStep(app):
     app.counter += 1
 
-def redrawAll(app): 
-    drawGrid(app)       # for testing, draw grid
-    app.S.checkReadyStrokes(app)
-    app.S.getCoordsInSitu(app)     
-    app.S.draw(app)     # draw structure (which draws its strokes) — not specific to Stroke object rn though
-    app.P.draw()        # draw player
-    drawNoteForTA(app)
-    print(f'allSlopes:')
-    pprint.pp(app.S.translated)
+def checkGameOver(app):
+    pass
 
-    # collision checking
-    for seg in app.relevantSegments:
-        drawLine(*seg,fill='red')
+
+#################################################
+#                    DRAWING                  
+#################################################]
+
+def redrawAll(app): 
+    if not app.paused:
+        drawBackground(app,'lightgray',100)
+        if app.drawGrid: drawGrid(app)       # for testing, draw grid
+        app.S.checkReadyStrokes(app)
+        app.S.getCoordsInSitu(app)     
+        app.S.draw(app)     # draw structure (which draws its strokes) — not specific to Stroke object rn though
+        app.P.draw()        # draw player
+        drawNoteForTA(app)
+        # pprint.pp(app.S.translated)
+        '''
+        # collision checking
+        for seg in app.relevantSegments:
+            drawLine(*seg,fill='red')'''
+        if app.gameOver:
+            drawGameOver(app)
+    else:
+        if app.showWelcome:
+            drawWelcome(app)
+        else:
+            drawPlayingPaused(app)
+
+def drawPlayingPaused(app):
+    drawBackground(app,'black',50)
+    drawLabel(f'press space to resume',app.width/2,app.height*0.4,size=18,bold=True,fill='black',align='center')
+
+def drawWelcome(app):
+    drawBackground(app,'black',50)
+    txtSz = 18
+    txtCol = 'black'
+    line1Y = app.height*0.05
+    lineH = txtSz * 1.2
+    marginLeft = app.width * 0.05
+    lines = '''\
+Asemic is a game about writing.
+New strokes are generated every couple seconds (in gray).
+Once they are fixed, they turn black.
+
+Move around using the arrow keys.
+Be careful to not get trapped — and don’t fall to the ground!
+Stay on the structure.
+
+Press space to start.
+    '''
+    welcomeText = lines.splitlines()
+    for i in range(len(welcomeText)):
+        drawLabel(f'{welcomeText[i]}',marginLeft,line1Y+(lineH*i),size=txtSz,bold=True,fill=txtCol,align='left')
+
+def drawGameOver(app):
+    drawBackground(app,'black',75)
+    drawLabel(f'game over :•(',app.width/2,app.height*0.9,size=18,bold=True,fill='white')
+    drawLabel(f"press ' r ' to restart",app.width/2,app.height*0.95,size=18,bold=True,fill='white')
+
+def drawBackground(app,bgCol,bgOpac):
+    drawRect(0,0,app.width,app.height,fill=bgCol,opacity=bgOpac)
 
 def drawGrid(app):
-    drawRect(0,0,app.width,app.height,fill='gray',opacity=30)
     for x in range(0,app.width,app.gridStep):
         for y in range(0,app.height,app.gridStep):
             drawRect(x,y,app.gridStep,app.gridStep,fill=None,border='gray',borderWidth=0.5,opacity=70)
@@ -377,7 +442,8 @@ def drawCanonStrokes(app):
 
 def drawNoteForTA(app):
     currTest = f'gravity on player + player interactions with structure'
-    drawLabel(f'currently testing: {currTest}',app.width/2,app.height*0.95,size=18,bold=True)
+    drawLabel(f'currently testing: {currTest}',app.width/2,app.height*0.025,size=18,bold=True)
+
 def main():
     runApp()
 
