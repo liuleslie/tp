@@ -16,7 +16,7 @@ GOOD TO HAVE:   friction
                 /
 '''
 
-# HORI: 横、横钩 | VERT: 竖、竖勾、竖撇、竖弯钩 | DIAG: 撇、捺
+# HORI: 横、横钩        VERT: 竖、竖勾、竖撇、竖弯钩        DIAG: 撇、捺
 
 CANON = { 'HORI': [ [(0,0), (4,0)], [(0,0), (4,0), (3,1)] ], 
           'VERT': [ [(0,0), (0,4)], [(0,0), (0,4), (-1,3)], [(0,0), (0,2), (-1,4)], [(0,0), (0,3), (1,4), (4,4), (4,3)] ],
@@ -50,12 +50,10 @@ class Structure:
             # instantiate new stroke
             self.strokes.append(Stroke(app,newStrokeIxRandX,newStrokeIxRandY,newCat,newPath,app.counter))
             newStroke = self.strokes[-1]
-            # update intersection info for both previous and new strokes
-    # THIS MAY BE PROBLEMATIC! but i am not adding the current intersection to oldStroke that newStroke is intersecting with... 
-            # prevStroke.ix.append(Intersection(newStroke,prevStrokeIxRandX,prevStrokeIxRandY)) # is segInd needed?
+            # add current intersection info to new stroke: attach previous (drawn) stroke coord info
             newStroke.ix.append(Intersection(newStrokeIxRandX,newStrokeIxRandY,prevStroke,prevStrokeIxRandX,prevStrokeIxRandY)) # is segInd needed?
 
-    def getRandomIxInfo(self,path):         # bug below previously
+    def getRandomIxInfo(self,path):
         strokeIxSegIndStart = random.randrange(0,len(path)-2) if len(path) > 2 else 0 # chose a random index of a segment in the path
         # get random x, y of previous stroke; choose a random int in the range between x and y
         strokeSegStart = path[strokeIxSegIndStart] # tuple representing abstract coords
@@ -110,7 +108,7 @@ class Structure:
                 currStroke.isReady = True
 
     def draw(self,app):
-        for strokeType in self.translated.keys():
+        for strokeType in ['NOT READY','READY']:
             strokeCol = 'black' if strokeType == 'READY' else 'gray'
             for x1, y1, x2, y2 in self.translated[strokeType]:
                 drawLine(x1,y1,x2,y2,lineWidth=app.strucStrokeWidth,fill=strokeCol)
@@ -305,7 +303,7 @@ def reset(app):
     app.paused = False
     app.stepsPerSecond = FPS
     app.counter = 0
-    app.strokeReadyThreshold = app.stepsPerSecond * FPS * 2 # stroke ready after this many seconds
+    app.strokeReadyThreshold = FPS * 2 # stroke ready after this many seconds
     app.gameOver = False    # if game over, init
     
     # initialize land, add founding stroke
@@ -348,7 +346,7 @@ def onStep(app):
         takeStep(app)
         if app.counter % (FPS * 3) == 0: # automatic stroke addition every however many seconds
             app.S.addStroke(app)
-        app.S.checkReadyStrokes(app)
+        # app.S.checkReadyStrokes(app)
         app.P.update(app) 
 
 def takeStep(app):
@@ -356,6 +354,7 @@ def takeStep(app):
 
 def redrawAll(app): 
     drawGrid(app)       # for testing, draw grid
+    app.S.checkReadyStrokes(app)
     app.S.getCoordsInSitu(app)     
     app.S.draw(app)     # draw structure (which draws its strokes) — not specific to Stroke object rn though
     app.P.draw()        # draw player
