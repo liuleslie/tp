@@ -4,7 +4,7 @@ from cmu_graphics import *
 import random, math, copy, pprint
 
 DIAG_ON = False # diagnostics; testing/debugging 
-FPS = 12 # frames (steps per second)
+FPS = 24 # frames (steps per second)
 
 '''
 GOAL:   working app
@@ -100,22 +100,14 @@ class Structure:
     
     def getCoordsInSitu(self,app):
         translated = []
-
-        # translated = {'VERT':[],'HORI':[],'INCR':[],'DECR':[]}
         for i in range(len(self.strokes)):
             currStroke = self.strokes[i]
-            # currStroke.draw(app)
             translated += currStroke.translate(app)
         self.translated = translated
 
     def draw(self,app):
-        # for key in self.translated.keys():
-        #     for coordPair in self.translated[key]:
-        #         drawLine(coordPair,fill='black')
         for x1, y1, x2, y2 in self.translated:
             drawLine(x1,y1,x2,y2,fill='black',lineWidth=app.strucStrokeWidth)
-        
-        
 
 # individual marks that make up Structure
 class Stroke:  
@@ -146,22 +138,15 @@ class Stroke:
         if self.ix != []:
             # find distance (dx) from self.ix to intersection stroke.ix, same for dy, mark as constant offset
             for i in range(len(self.ix)): # iterate over intersections. 
-    # i think there'll only be one intersection, since it is randomly generated only once.
-    # ^ the above only applies if i DO NOT implement two-way intersection creation.
                 intersection = self.ix[i]
                 ixText = f"intersection at other's {intersection.otherX},{intersection.otherY}, self's {self.ox},{self.oy}"
-                # otherStroke = intersection.ixingStroke.ix[i] # guaranteed? because you add intersections, on both ends/strokes
                 otherStroke = intersection.ixingStroke
-                # dx = otherStroke.ox - self.ox
-                # dy = otherStroke.oy - self.oy
                 dx = intersection.otherX - self.ox
                 dy = intersection.otherY - self.oy
-
         else: # no intersections, no need to offset
             dx,dy = 0,0
-        
         # iterate over segments in path, add dx and dy
-        prevPointEndX,prevPointEndY = 0,0
+        # prevPointEndX,prevPointEndY = 0,0
         tempGridOffset = app.width/3
 
         ptStartX, ptStartY = self.path[0] 
@@ -187,8 +172,6 @@ class Stroke:
             drawLabel(f'{self.cat} {self.path} {ixText}',app.width/2,app.height*0.8)
         
         return translated
-        
-
 
 class Intersection:
     # def __init__(self,ixingStroke,selfIxX,selfIxY):
@@ -207,50 +190,105 @@ class Player:
         self.cy = cy
         self.size = 20
         self.col = 'red'
-
-        # gravity and motion
-        self.jumping = False
-        self.falling = True
-        self.fallCount = 0
-        # self.supported = False
-
-        self.speed = self
-        self.xSpeed = self.size
-        self.xDir = 0
         
-        self.grav = 0.5
-        self.jumpHeight = self.size
-        self.vy = self.jumpHeight
-
-
+        # movement
+        self.xDirection = 0
+        self.yDirection = 0 # basically y velocity
+        self.speed = self.size * 20
+        self.gravity = 20
+        self.isJumping = False
+        self.isFalling = True
+        self.jumpHeight = self.size * 2
     
     def draw(self):
+        # print(f'xdir {self.xDirection} ydir {self.yDirection} isjumping {self.isJumping}')
         drawRect(self.cx-self.size/2,self.cy-self.size/2,self.size,self.size,fill=self.col)
-    
+
     def update(self,app):
-        # collision(app,'HORI')
-        # collision(app,'VERT')
+        # check if colliding with anything left/right
+        self.colliding('VERT',app)
 
-        if not (self.cy <= self.size or self.cy >= app.height-self.size/2):
-            self.vy += self.grav
-        else:
-            self.vy = 0
-            self.falling = False
-        
-        # if self.jumping: # need to jump to certain height only; would this be smoother if cy changed based on hold, like left/right?
-        #     self.cy -= self.jumpHeight
-        #     self.falling = True
-        if self.falling: self.cy += self.vy 
+        # check if colliding with anything below
+        self.colliding('HORI',app)
 
-        self.cx += self.xSpeed * self.xDir # xSpeed * xDir = x velocity
-        if DIAG_ON: print(f'vy is {self.vy}')
+        # check if on ground / canvas
+        self.move(app)
 
-        if self.cx <= self.size: self.cx = self.size
-        elif self.cx > app.width-self.size/2: self.cx = app.width-self.size
-        if self.cy <= self.size: self.cy = self.size
-        elif self.cy > app.height-self.size/2: self.cy = app.height-self.size/2
-        
-        
+    def move(self,app):
+        if self.size < self.cx < app.width-self.size:
+            self.cx += self.xDirection * self.speed * app.dt
+
+        if self.isJumping:
+            self.cy -= self.jumpHeight
+            self.isJumping = False
+            self.isFalling = True
+            
+        if self.isFalling:
+            self.yDirection += self.gravity * app.dt
+            if self.cy > app.height-self.size/2:
+                self.isFalling = False
+                self.yDirection = 0
+                self.cy = app.height-self.size/2
+        # else:
+        #     self.yDirection = 0
+
+        if self.isFalling: self.cy += self.yDirection
+        # if self.cy <= self.size: self.cy = self.size
+        # elif self.cy > app.height-self.size/2: 
+        #     self.cy = app.height-self.size/2
+
+    def colliding(self,dir,app):
+        moe = 3 # margin of error. this gets problematic quick.
+        pLeft = app.P.cx - app.P.size/2
+        pRight = pLeft + app.P.size
+        pTop = app.P.cy - app.P.size/2
+        pBottom = pTop + app.P.size
+        slopes = getSlopes(app,dir)
+
+        # go through slopes, check if colliding
+        for x1,y1,x2,y2 in slopes: 
+            if dir == 'VERT': # x axis: left/right collision
+                if (((abs(pLeft-(x1+app.strucStrokeWidth/2)) <= moe and self.xDirection == -1) or 
+                    (abs(pRight-(x1-app.strucStrokeWidth/2)) <= moe and self.xDirection == 1)) and 
+                    (y1 <= pTop <= pBottom <= y2)):
+                    self.xDirection = 0
+                    print('should not be able to move left/right; since against wall')
+            
+            if dir == 'HORI': # y axis: horizontal platforms
+                # if (abs(pBottom-(y1-app.strucStrokeWidth/2)) <= moe and self.yDirection == -1) or (abs(pBottom-(y1-app.strucStrokeWidth/2)) <= moe and self.yDirection == 1):
+                if (abs(pBottom-y1) <= moe) and (x1 <= pLeft <= x2): # on top of stroke and within stroke length
+                    self.yDirection = 0
+                    self.cy = y2-(app.strucStrokeWidth/2)-(self.size/2) # snap to platform/stroke top 
+                    self.isFalling = False # on ground
+                else:
+                    self.isFalling = True
+
+
+def getSlopes(app,dir):
+    slopes = {'VERT':[],'HORI':[],'INCR':[],'DECR':[]}
+    for x1,y1,x2,y2 in app.S.translated: # iterate over all line segments, check for collisions
+        dy, dx = y2-y1, x2-x1
+        if dx == 0: slopeCat = 'VERT'
+        elif dy == 0: slopeCat = 'HORI'
+        elif dy/dx > 0: slopeCat = 'INCR'
+        else: slopeCat = 'DECR'
+        slopes[slopeCat].append((x1,y1,x2,y2))
+    return slopes[dir]
+
+def getVicinity(app):   
+    vicinity = []
+    pLeft = app.P.cx - app.P.size/2
+    pRight = pLeft + app.P.size
+    pTop = app.P.cy - app.P.size/2
+    pBottom = pTop + app.P.size
+    vic = app.P.size * 2
+    rangeX = range(int(app.P.cx-app.width/3),int(app.P.cx+app.width/3))
+    rangeY = range(int(app.P.cy-app.height/3),int(app.P.cy+app.height/3))   
+    vicinity.append(app.S.translated[0])
+    for x1,y1,x2,y2 in app.S.translated:
+        if ((x1 in rangeX) or (x2 in rangeX)) and ((y1 in rangeY) or (y2 in rangeY)):
+            vicinity.append((x1,y1,x2,y2))
+    return vicinity
 
 
 #################################################
@@ -267,6 +305,7 @@ def reset(app):
     app.height = 600
     app.gridCount = 15
     app.gridStep = int(app.width/app.gridCount)
+    app.dt = 0.01
 
     # app controls
     app.paused = False
@@ -277,30 +316,31 @@ def reset(app):
     # initialize land, add founding stroke
     app.S = Structure(app)
     app.S.addStroke(app)
-    app.strucStrokeWidth = 2
+    app.strucStrokeWidth = 3
 
     # initializer player
     app.P = Player(app.width/2,50)
 
+    # collision checks
+    app.relevantSegments = []
+
 def onKeyPress(app,key):
     # game controls
-    if key == 'space':
-        app.paused = not app.paused
-    elif key == 'r':
-        reset(app)
+    if key == 'space': app.paused = not app.paused
+    elif key == 'r': reset(app)
     
     # player movement
-    if key == 'up' and not app.P.falling: app.P.jumping = True
-    if key == 'left': app.P.xDir = -1 # app.P.vx = -1 
-    if key == 'right': app.P.xDir = 1 # app.P.vx = 1 
+    if key == 'up': # and not app.P.isFalling: 
+        app.P.isJumping = True
+        print(f'pressed up and can jump, player coords {app.P.cx},{app.P.cy}')
+    if key == 'left': app.P.xDirection = -1
+    if key == 'right': app.P.xDirection = 1
 
 def onKeyRelease(app,key):
     # player movement
-    if key == 'up': 
-        app.P.jumping = False
-        app.P.falling = True
-    if key == 'left': app.P.xDir = 0 # vx = 0
-    if key == 'right': app.P.xDir = 0 # vx = 0
+    # if key == 'up': app.P.isJumping = False # app.P.isFalling = True
+    if key == 'left': app.P.xDirection = 0
+    if key == 'right': app.P.xDirection = 0
     
 
 #################################################
@@ -310,84 +350,9 @@ def onKeyRelease(app,key):
 def onStep(app):
     if not app.paused:
         takeStep(app)
-        if app.counter % (12 * 3) == 0: # automatic stroke addition every however many seconds
+        if app.counter % (FPS * 3) == 0: # automatic stroke addition every however many seconds
             app.S.addStroke(app)
-        # collision checks
-        # go through Structure.translated, check if colliding with Player
-        checkCollisions(app)
-        # update player location
-        app.P.update(app)
-
-# split axis: check horizontal coll
-# then check vert coll
-# overlap check
-# update position
-
-def collision(self,app,axis):
-    pass
-
-def checkCollisions(app):
-    playerLeft = app.P.cx - app.P.size/2
-    playerRight = playerLeft + app.P.size
-    playerTop = app.P.cy - app.P.size/2
-    playerBottom = playerTop + app.P.size
-    collisionMargin = 3
-    vertCollisionMargin = 30
-    # print(app.S.translated)
-
-    # slopes = {'VERT':[],'HORI':[],'INCR':[],'DECR':[]}
-
-    for x1,y1,x2,y2 in app.S.translated:
-        # these are all rogue line segments
-        
-        dy = y2-y1
-        dx = x2-x1
-
-        slopeCat = ''
-        if dx == 0: 
-            slopeCat = 'VERT'
-
-        elif dy == 0: 
-            slopeCat = 'HORI'
-            if (x1 < playerLeft and playerRight <= x2) and (y1-playerBottom)<=collisionMargin:
-                app.P.falling = False
-                app.P.vy = 0
-                # app.P.cy = y1-(app.strucStrokeWidth/2)-app.P.size/2
-                print(f'should not be falling, vy {app.P.vy}')
-            else:
-                app.P.falling = True
-        elif dy < 0: 
-            slopeCat = 'INCR'
-        else: 
-            slopeCat = 'DECR'
-
-
-
-        # could move collision detection here directly?
-
-        # slopes[slopeCat].append([(x1,y1,x2,y2)])
-    
-    # for slopeCat in slopes:
-    #     slopes[slopeCat] = sorted(slopes[slopeCat])
-
-    # # find nearest 
-    # for horiPlatforms in slopes['HORI']:
-    #     for horiPlatform in horiPlatforms:
-    #         x1,y1,x2,y2 = horiPlatform
-    #         platformTop = y1-app.strucStrokeWidth/2
-    #         platformBottom = platformTop+app.strucStrokeWidth
-
-    #         if abs(platformTop-playerBottom) < collisionMargin:
-    #             if x1 <= playerLeft and playerRight <= x2:
-    #                 app.P.falling=False
-    #                 app.P.cy = platformTop-app.strucStrokeWidth
-    #         # print(f'hori platform as list: {horiPlatform}')
-
-
-    # if not app.paused: pprint.pp(slopes)
-    
-    
-        
+        app.P.update(app) 
 
 def takeStep(app):
     app.counter += 1
@@ -397,9 +362,11 @@ def redrawAll(app):
     app.S.getCoordsInSitu(app)     
     app.S.draw(app)     # draw structure (which draws its strokes) — not specific to Stroke object rn though
     app.P.draw()        # draw player
-
-    # print(f'player x,y {app.P.cx},{app.P.cy} player velocity {app.P.vy}')
     drawNoteForTA(app)
+
+    # collision checking
+    for seg in app.relevantSegments:
+        drawLine(*seg,fill='red')
 
 def drawGrid(app):
     drawRect(0,0,app.width,app.height,fill='gray',opacity=30)
@@ -410,9 +377,7 @@ def drawGrid(app):
 def drawCanonStrokes(app):
     drawGrid(app)
 
-
 def drawNoteForTA(app):
-    pastTest = f'automatic stroke generation (1 new every second)'
     currTest = f'gravity on player + player interactions with structure'
     drawLabel(f'currently testing: {currTest}',app.width/2,app.height*0.95,size=18,bold=True)
 def main():
